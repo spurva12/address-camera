@@ -13,29 +13,37 @@ class AddressCameraHelper {
   static Future<File> overlayText(File imageFile, String text) async {
     final bytes = await imageFile.readAsBytes();
     img.Image? image = img.decodeImage(bytes);
+    if (image == null) {
+      print("Unable overlay text");
+      return imageFile;
+    }
+    int width = image.width;
+    int height = image.height;
+    int fontSize = (width * 0.05).toInt();
     final fontZipFile = await rootBundle.load('assets/font.zip');
     final font = img.BitmapFont.fromZip(fontZipFile.buffer.asUint8List());
+    font.size = fontSize;
+    int boxHeight = fontSize * (text.split("\n").length + 1);
 
-    int boxHeight = 100;
     img.fillRect(
-      image!,
+      image,
       x1: 0,
-      y1: image.height - boxHeight,
-      x2: image.width,
-      y2: image.height,
+      y1: height - boxHeight,
+      x2: width,
+      y2: height,
       color: img.ColorRgba8(0, 0, 0, 153),
     );
 
     img.drawString(
       image,
       x: 20,
-      y: image.height - boxHeight + 10,
+      y: height - boxHeight + 10,
       text,
       wrap: true,
       color: img.ColorRgba8(255, 255, 255, 255),
       font: font,
     );
-    var modifiedBytes = Uint8List.fromList(await img.encodeJpg(image));
+    var modifiedBytes = Uint8List.fromList(img.encodeJpg(image));
 
     final newFile = File(imageFile.path);
     await newFile.writeAsBytes(modifiedBytes);

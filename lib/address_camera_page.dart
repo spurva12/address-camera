@@ -1,9 +1,13 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:gallery_saver_plus/gallery_saver.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:intl/intl.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -27,9 +31,11 @@ class _AddressCameraState extends State<AddressCamera> {
 
   Position? _currentPosition;
   Stream<Position>? _positionStream;
-  String address = "";
+  String _address = "";
   CameraController? _cameraController;
-  final translator = GoogleTranslator();
+  final _translator = GoogleTranslator();
+  Timer? _timer;
+  String _currentTime = "";
 
   Future<void> addAllPermission() async {
     await Permission.camera.request();
@@ -42,13 +48,34 @@ class _AddressCameraState extends State<AddressCamera> {
       ResolutionPreset.medium,
     );
     await _cameraController?.initialize();
+    timer();
     _getLocation();
+  }
+
+  void timer() {
+    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      formatDateTime(DateTime.now());
+    });
+  }
+
+  void formatDateTime(DateTime dateTime) {
+    String formattedDateTime = DateFormat(
+      'dd-MM-yyyy HH:mm:ss',
+    ).format(dateTime);
+    Duration offset = dateTime.timeZoneOffset;
+    String sign = offset.isNegative ? '-' : '+';
+    String twoDigits(int n) => n.abs().toString().padLeft(2, '0');
+    String offsetHours = twoDigits(offset.inHours);
+    String offsetMinutes = twoDigits(offset.inMinutes.remainder(60));
+    setState(() {
+      _currentTime = "$formattedDateTime GMT$sign$offsetHours:$offsetMinutes";
+    });
   }
 
   void _getLocation() async {
     bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
     if (!serviceEnabled) {
-      setState(() => address = 'Location not available');
+      setState(() => _address = 'Location not available');
       return;
     }
 
@@ -68,39 +95,41 @@ class _AddressCameraState extends State<AddressCamera> {
     _positionStream!.listen((Position position) async {
       setState(() => _currentPosition = position);
       String add = await getAddress(position);
-      var hindi = await translator.translate(add, from: "en", to: "hi");
+      var hindi = await _translator.translate(add, from: "en", to: "hi");
       setState(() {
         _currentPosition = position;
-        address = hindi.text;
+        _address = hindi.text;
       });
     });
   }
 
   getAddress(Position position) async {
     try {
-      List<Placemark> placemarks = await placemarkFromCoordinates(
+      List<Placemark> placeMark = await placemarkFromCoordinates(
         position.latitude,
         position.longitude,
       );
-      if (placemarks.isNotEmpty) {
-        final place = placemarks.first;
+      if (placeMark.isNotEmpty) {
+        final place = placeMark.first;
         return '${place.name}, ${place.locality}\n${place.administrativeArea}, ${place.country}';
       }
       return '';
     } catch (e) {
-      print(e.toString());
+      if (kDebugMode) {
+        print(e.toString());
+      }
     }
   }
 
   Future<void> getImage() async {
     try {
       final picture = await _cameraController?.takePicture();
-
+      var captureTime = _currentTime;
       final croppedFile = await AddressCameraHelper.cropImage(picture!.path);
       if (croppedFile == null) return;
 
       var text =
-          "$address\nlat: ${_currentPosition!.latitude}, long: ${_currentPosition!.longitude}";
+          "$_address\nlat: ${_currentPosition!.latitude}, long: ${_currentPosition!.longitude}\n$captureTime";
       final finalImage = await AddressCameraHelper.overlayText(
         croppedFile,
         text,
@@ -114,21 +143,30 @@ class _AddressCameraState extends State<AddressCamera> {
       final saved = await finalImage.copy(savePath);
       await GallerySaver.saveImage(saved.path).then(
         (value) => {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              backgroundColor: Colors.green,
-              content: Text("Saved Image Successfully"),
-              duration: Duration(seconds: 2),
-            ),
-          ),
+          if (context.mounted) showMessage(context, "Saved Image Successfully"),
         },
       );
-    } catch (e) {}
+    } catch (e) {
+      if (kDebugMode) {
+        print(e.toString());
+      }
+    }
+  }
+
+  static Future<void> showMessage(BuildContext context, String message) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: Colors.green,
+        content: Text(message),
+        duration: Duration(seconds: 2),
+      ),
+    );
   }
 
   @override
   void dispose() {
     _cameraController?.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
@@ -140,7 +178,7 @@ class _AddressCameraState extends State<AddressCamera> {
           _cameraController == null ||
               !_cameraController!.value.isInitialized ||
               _currentPosition == null ||
-              address.isEmpty
+              _address.isEmpty
           ? Center(child: CircularProgressIndicator())
           : Stack(
               children: [
@@ -157,7 +195,7 @@ class _AddressCameraState extends State<AddressCamera> {
                             child: Container(
                               padding: EdgeInsets.all(8),
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.6),
+                                color: Colors.black.withAlpha(153),
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
@@ -186,7 +224,7 @@ class _AddressCameraState extends State<AddressCamera> {
                                   SizedBox(width: 10),
                                   Flexible(
                                     child: Text(
-                                      "$address\nlat: ${_currentPosition!.latitude}, long: ${_currentPosition!.longitude}",
+                                      "$_address\nlat: ${_currentPosition!.latitude}, long: ${_currentPosition!.longitude}\n$_currentTime",
                                       style: TextStyle(color: Colors.white),
                                     ),
                                   ),

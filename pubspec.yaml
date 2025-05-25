@@ -45,6 +45,7 @@ dependencies:
   gallery_saver_plus: ^3.2.4
   google_maps_flutter: ^2.12.2
   translator: ^1.0.3+1
+  intl: ^0.20.2
 
 dev_dependencies:
   flutter_test:
